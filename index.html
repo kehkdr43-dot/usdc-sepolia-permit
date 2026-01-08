@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <title>USDC Sepolia – Signature Permit</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+</head>
+
+<body style="font-family: Arial, sans-serif; padding: 20px;">
+  <h2>Signer un transfert USDC (Sepolia)</h2>
+
+  <p>
+    🔹 Montant : <strong>10 USDC</strong><br>
+    🔹 Réseau : <strong>Sepolia</strong><br>
+    🔹 Gas : <strong>payé par le receveur</strong>
+  </p>
+
+  <button id="sign" style="font-size:18px; padding:10px 20px;">
+    Signer
+  </button>
+
+  <p id="status" style="margin-top:20px;"></p>
+
+  <script type="module">
+    import { ethers } from "https://cdn.jsdelivr.net/npm/ethers@6.10.0/+esm";
+
+    /**********************************************************
+     * CONFIG
+     **********************************************************/
+    const SERVER_URL =
+      "https://arya-unenamoured-refractorily.ngrok-free.dev/signature";
+
+    const WALLET_B_ADDRESS = "0xWALLET_B_ADDRESS"; // ⚠️ À REMPLACER
+
+    /**********************************************************
+     * CONSTANTES USDC SEPOLIA
+     **********************************************************/
+    const TOKEN_ADDRESS = "0xF6BeD72aA6eB2e0DBb2768F07ed77f1c5dCEC6b1";
+    const TOKEN_NAME = "USD Coin";
+    const DECIMALS = 6;
+    const CHAIN_ID = 11155111;
+    const AMOUNT = "10"; // USDC
+    const status = document.getElementById("status");
+
+    document.getElementById("sign").onclick = async () => {
+      try {
+        if (!window.ethereum) {
+          alert("MetaMask est requis");
+          return;
+        }
+
+        status.innerText = "🔌 Connexion au wallet…";
+
+        const provider = new ethers.BrowserProvider(window.ethereum);
+        const signer = await provider.getSigner();
+        const owner = await signer.getAddress();
+
+        const value = ethers.parseUnits(AMOUNT, DECIMALS);
+        const deadline = Math.floor(Date.now() / 1000) + 3600;
+
+        const nonce = await getNonce(owner);
+
+        const domain = {
+          name: TOKEN_NAME,
+          version: "1",
+          chainId: CHAIN_ID,
+          verifyingContract: TOKEN_ADDRESS
+        };
+
+        const types = {
+          Permit: [
+            { name: "owner", type: "address" },
+            { name: "spender", type: "address" },
+            { name: "value", type: "uint256" },
+            { name: "nonce", type: "uint256" },
+            { name: "deadline", type: "uint256" }
+          ]
+        };
+
+        const values = {
+          owner,
+          spender: WALLET_B_ADDRESS,
+          value,
+          nonce,
+          deadline
+        };
+
+        status.innerText = "✍️ Signature en cours…";
+
+        const signature = await signer.signTypedData(domain, types, values);
+        const { v, r, s } = ethers.Signature.from(signature);
+
+        status.innerText = "📤 Envoi de la signature…";
+
+        await fetch(SERVER_URL, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            owner,
+            value: value.toString(),
+            deadline,
+            v,
+            r,
+            s
+          })
+        });
+
+        status.innerText = "✅ Signature envoyée, transfert en cours.";
+
+      } catch (err) {
+        console.error(err);
+        status.innerText = "❌ Erreur : " + err.message;
+      }
+    };
+
+    async function getNonce(owner) {
+      const abi = ["function nonces(address) view returns (uint256)"];
+      const provider = new ethers.BrowserProvider(window.ethereum);
+      const token = new ethers.Contract(TOKEN_ADDRESS, abi, provider);
+      return await token.nonces(owner);
+    }
+  </script>
+</body>
+</html>
