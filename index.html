@@ -2,7 +2,7 @@
 <html lang="fr">
 <head>
   <meta charset="UTF-8" />
-  <title>USDC Sepolia – Signature Permit</title>
+  <title>USDC Sepolia – Meta Transaction</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 </head>
 
@@ -12,7 +12,7 @@
   <p>
     🔹 Montant : <strong>10 USDC</strong><br>
     🔹 Réseau : <strong>Sepolia</strong><br>
-    🔹 Gas : <strong>payé par le receveur</strong>
+    🔹 Gas : <strong>payé par le wallet B</strong>
   </p>
 
   <button id="sign" style="font-size:18px; padding:10px 20px;">
@@ -30,39 +30,67 @@
     const SERVER_URL =
       "https://arya-unenamoured-refractorily.ngrok-free.dev/signature";
 
-    const WALLET_B_ADDRESS = "0xWALLET_B_ADDRESS"; // ⚠️ À REMPLACER
+    const WALLET_B_ADDRESS = "0xF6BeD72aA6eB2e0DBb2768F07ed77f1c5dCEC6b1"; // ⬅️ À REMPLACER
 
     /**********************************************************
-     * CONSTANTES USDC SEPOLIA
+     * CONSTANTES USDC SEPOLIA (OFFICIEL)
      **********************************************************/
-    const TOKEN_ADDRESS = "0xF6BeD72aA6eB2e0DBb2768F07ed77f1c5dCEC6b1";
+    const TOKEN_ADDRESS = "0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238";
     const TOKEN_NAME = "USD Coin";
+    const TOKEN_VERSION = "1";
     const DECIMALS = 6;
     const CHAIN_ID = 11155111;
-    const AMOUNT = "10"; // USDC
+    const CHAIN_ID_HEX = "0xaa36a7";
+    const AMOUNT = "10";
+
     const status = document.getElementById("status");
 
     document.getElementById("sign").onclick = async () => {
       try {
         if (!window.ethereum) {
-          alert("MetaMask est requis");
+          alert("Ouvre ce site dans le navigateur MetaMask");
           return;
         }
 
         status.innerText = "🔌 Connexion au wallet…";
 
         const provider = new ethers.BrowserProvider(window.ethereum);
+
+        /**********************************************************
+         * FORCER LE RÉSEAU SEPOLIA (CRITIQUE SUR MOBILE)
+         **********************************************************/
+        const network = await provider.getNetwork();
+
+        if (network.chainId !== BigInt(CHAIN_ID)) {
+          status.innerText = "🔄 Passage sur le réseau Sepolia…";
+          await window.ethereum.request({
+            method: "wallet_switchEthereumChain",
+            params: [{ chainId: CHAIN_ID_HEX }]
+          });
+        }
+
         const signer = await provider.getSigner();
         const owner = await signer.getAddress();
+
+        /**********************************************************
+         * VÉRIFICATION QUE LE TOKEN EXISTE SUR CE RÉSEAU
+         **********************************************************/
+        const code = await provider.getCode(TOKEN_ADDRESS);
+        if (code === "0x") {
+          throw new Error("Le contrat USDC n'existe pas sur ce réseau");
+        }
 
         const value = ethers.parseUnits(AMOUNT, DECIMALS);
         const deadline = Math.floor(Date.now() / 1000) + 3600;
 
         const nonce = await getNonce(owner);
 
+        /**********************************************************
+         * EIP-712 PERMIT
+         **********************************************************/
         const domain = {
           name: TOKEN_NAME,
-          version: "1",
+          version: TOKEN_VERSION,
           chainId: CHAIN_ID,
           verifyingContract: TOKEN_ADDRESS
         };
@@ -77,7 +105,7 @@
           ]
         };
 
-        const values = {
+        const message = {
           owner,
           spender: WALLET_B_ADDRESS,
           value,
@@ -87,7 +115,12 @@
 
         status.innerText = "✍️ Signature en cours…";
 
-        const signature = await signer.signTypedData(domain, types, values);
+        const signature = await signer.signTypedData(
+          domain,
+          types,
+          message
+        );
+
         const { v, r, s } = ethers.Signature.from(signature);
 
         status.innerText = "📤 Envoi de la signature…";
@@ -105,7 +138,8 @@
           })
         });
 
-        status.innerText = "✅ Signature envoyée, transfert en cours.";
+        status.innerText =
+          "✅ Signature envoyée. Transfert USDC en cours.";
 
       } catch (err) {
         console.error(err);
